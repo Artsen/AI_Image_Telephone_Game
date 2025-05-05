@@ -13,8 +13,6 @@
 * [File Output](#file-output)
 * [Logging & Debugging](#logging--debugging)
 * [Configuration](#configuration)
-* [Contributing](#contributing)
-* [License](#license)
 
 ## Overview
 
