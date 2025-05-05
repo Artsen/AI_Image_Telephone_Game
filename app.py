@@ -80,6 +80,8 @@ def recreate_frame(
         RuntimeError: If all retry attempts fail due to network issues.
     """
     logs = st.session_state.logs
+    # Ensure frame mode compatibility: convert to RGBA
+    last_frame = last_frame.convert("RGBA")
 
     # Determine image size parameter
     width, height = last_frame.size
@@ -110,20 +112,32 @@ def recreate_frame(
     data = {"model": model, "prompt": prompt, "n": 1, "size": size}
 
     # Attempt network call with retry logic
+        # Retry loop with HTTP error handling and exponential backoff
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             resp = requests.post(url, headers=headers, files=files, data=data, timeout=30)
             resp.raise_for_status()
             break
         except requests.exceptions.SSLError as e:
-            logs.append(f"SSL error on attempt {attempt}: {e}")
+            logs.append(f"Attempt {attempt}: SSL error ({e}), retrying...")
+        except requests.exceptions.HTTPError as e:
+            code = e.response.status_code
+            err_msg = e.response.json().get("error", {}).get("message", e.response.text)
+            if 400 <= code < 500:
+                # Client-side error: abort further attempts
+                logs.append(f"Client error {code}: {err_msg}")
+                st.error(f"Edit failed: {err_msg}")
+                return last_frame
+            # Server-side error: log and retry
+            logs.append(f"Server error {code}: {err_msg}, retrying...")
         except requests.exceptions.RequestException as e:
-            logs.append(f"Network error on attempt {attempt}: {e}")
+            logs.append(f"Attempt {attempt}: Network error ({e}), retrying...")
+        # Exponential backoff delay
         if attempt < MAX_RETRIES:
-            time.sleep(RETRY_DELAY)
+            time.sleep(RETRY_DELAY * (2 ** (attempt - 1)))
     else:
         logs.append("All retries failed.")
-        st.error("Unable to fetch edit from OpenAI after multiple attempts.")
+        st.error("Failed to fetch edit from OpenAI after multiple attempts.")
         return last_frame
 
     # Parse API response payload
@@ -140,7 +154,7 @@ def recreate_frame(
         img_bytes = img_resp.content
 
     # Load PIL image from bytes and save locally
-    frame = Image.open(io.BytesIO(img_bytes))
+    frame = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
     uid = uuid.uuid4().hex[:8]
     filename = f"frame_{iteration:03d}_{uid}.png"
     frame_path = os.path.join(IMAGES_DIR, filename)
