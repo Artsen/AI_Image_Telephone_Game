@@ -1,4 +1,4 @@
-# Image Telephone
+# AI Image Telephone Game
 
 **Iteratively recreate an image through the “telephone game” of the OpenAI Images API.**
 
